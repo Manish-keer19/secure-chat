@@ -1,3 +1,8 @@
+// ═══════════════════════════════════════════════════════════════════
+//  Whisper Chat Backend — Entry Point
+//  Express + Socket.IO + Graceful Shutdown
+// ═══════════════════════════════════════════════════════════════════
+
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -6,166 +11,129 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import cors from "cors";
 
-const app = express();
-const server = createServer(app);
+import type { ServerToClientEvents, ClientToServerEvents } from "./types";
+import { registerSocketHandlers } from "./socketHandler";
+import { roomManager } from "./roomManager";
+import { log } from "./utils";
+import {
+  SOCKET_PING_TIMEOUT,
+  SOCKET_PING_INTERVAL,
+  MAX_HTTP_BUFFER_SIZE,
+} from "./constants";
 
-// ─── ENV ────────────────────────────────────────────────────────────
-const PORT = process.env.PORT || 4000;
+// ═══════════════════════════════════════════════════════════════════
+//  Configuration
+// ═══════════════════════════════════════════════════════════════════
+const PORT = parseInt(process.env.PORT || "4000", 10);
 const CORS_ORIGINS = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(",").map((s) => s.trim())
   : ["http://localhost:5173", "http://localhost:3000"];
 
-const io = new Server(server, {
+// ═══════════════════════════════════════════════════════════════════
+//  Express App
+// ═══════════════════════════════════════════════════════════════════
+const app = express();
+
+// Trust proxy for Render/Railway/Docker/nginx
+app.set("trust proxy", 1);
+
+// CORS
+app.use(cors({ origin: CORS_ORIGINS }));
+
+// Disable X-Powered-By for security
+app.disable("x-powered-by");
+
+// ── Health Check ──────────────────────────────────────────────────
+app.get("/", (_req, res) => {
+  const stats = roomManager.getStats();
+  res.json({
+    status: "ok",
+    uptime: Math.floor(process.uptime()),
+    ...stats,
+    memory: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + "MB",
+  });
+});
+
+// ── Readiness Probe ───────────────────────────────────────────────
+app.get("/health", (_req, res) => {
+  res.status(200).send("ok");
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  HTTP + Socket.IO Server
+// ═══════════════════════════════════════════════════════════════════
+const server = createServer(app);
+
+const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, {
   cors: {
     origin: CORS_ORIGINS,
     methods: ["GET", "POST"],
   },
+  // Performance tuning
+  pingTimeout: SOCKET_PING_TIMEOUT,
+  pingInterval: SOCKET_PING_INTERVAL,
+  maxHttpBufferSize: MAX_HTTP_BUFFER_SIZE,
+  // Prefer websocket, fall back to polling
+  transports: ["websocket", "polling"],
+  allowUpgrades: true,
+  // Disable per-message deflate for lower CPU
+  perMessageDeflate: false,
+  // Connection state recovery (short window for reconnects)
+  connectionStateRecovery: {
+    maxDisconnectionDuration: 2 * 60 * 1000, // 2 minutes
+    skipMiddlewares: true,
+  },
 });
 
-// ─── In-Memory Store ───────────────────────────────────────────────
-interface Message {
-  id: string;
-  sender: string;
-  text: string;
-  timestamp: number;
-}
+// ── Register socket event handlers ────────────────────────────────
+registerSocketHandlers(io);
 
-interface Room {
-  id: string;
-  users: Map<string, string>; // socketId -> username
-  messages: Message[];
-}
+// ── Start room cleanup sweep ──────────────────────────────────────
+roomManager.startCleanup();
 
-const rooms = new Map<string, Room>();
-
-// ─── Helper ────────────────────────────────────────────────────────
-function getOrCreateRoom(roomId: string): Room {
-  if (!rooms.has(roomId)) {
-    rooms.set(roomId, {
-      id: roomId,
-      users: new Map(),
-      messages: [],
-    });
-  }
-  return rooms.get(roomId)!;
-}
-
-function generateId(): string {
-  return Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
-}
-
-// ─── Socket Events ─────────────────────────────────────────────────
-io.on("connection", (socket) => {
-  console.log(`✦ Connected: ${socket.id}`);
-
-  let currentRoom: string | null = null;
-  let currentUsername: string | null = null;
-
-  // Join a room
-  socket.on("join-room", ({ roomId, username }: { roomId: string; username: string }) => {
-    // Leave previous room if any
-    if (currentRoom) {
-      socket.leave(currentRoom);
-      const prevRoom = rooms.get(currentRoom);
-      if (prevRoom) {
-        prevRoom.users.delete(socket.id);
-        io.to(currentRoom).emit("room-users", Array.from(prevRoom.users.values()));
-        io.to(currentRoom).emit("system-message", {
-          id: generateId(),
-          text: `${currentUsername} left the room`,
-          timestamp: Date.now(),
-        });
-      }
-    }
-
-    currentRoom = roomId;
-    currentUsername = username;
-
-    const room = getOrCreateRoom(roomId);
-    room.users.set(socket.id, username);
-    socket.join(roomId);
-
-    // Send existing messages to the joining user
-    socket.emit("message-history", room.messages);
-
-    // Notify room of new user
-    io.to(roomId).emit("room-users", Array.from(room.users.values()));
-    io.to(roomId).emit("system-message", {
-      id: generateId(),
-      text: `${username} joined the room`,
-      timestamp: Date.now(),
-    });
-
-    console.log(`  → ${username} joined room ${roomId} (${room.users.size} users)`);
-  });
-
-  // Send a message
-  socket.on("send-message", ({ text }: { text: string }) => {
-    if (!currentRoom || !currentUsername) return;
-
-    const room = rooms.get(currentRoom);
-    if (!room) return;
-
-    const message: Message = {
-      id: generateId(),
-      sender: currentUsername,
-      text,
-      timestamp: Date.now(),
-    };
-
-    room.messages.push(message);
-
-    // Cap messages at 200 to prevent unbounded memory growth
-    if (room.messages.length > 200) {
-      room.messages = room.messages.slice(-200);
-    }
-
-    io.to(currentRoom).emit("new-message", message);
-  });
-
-  // Typing indicator
-  socket.on("typing", () => {
-    if (!currentRoom || !currentUsername) return;
-    socket.to(currentRoom).emit("user-typing", currentUsername);
-  });
-
-  socket.on("stop-typing", () => {
-    if (!currentRoom || !currentUsername) return;
-    socket.to(currentRoom).emit("user-stop-typing", currentUsername);
-  });
-
-  // Disconnect
-  socket.on("disconnect", () => {
-    console.log(`✦ Disconnected: ${socket.id}`);
-    if (currentRoom) {
-      const room = rooms.get(currentRoom);
-      if (room) {
-        room.users.delete(socket.id);
-        io.to(currentRoom).emit("room-users", Array.from(room.users.values()));
-        io.to(currentRoom).emit("system-message", {
-          id: generateId(),
-          text: `${currentUsername} left the room`,
-          timestamp: Date.now(),
-        });
-
-        // Clean up empty rooms
-        if (room.users.size === 0) {
-          rooms.delete(currentRoom);
-          console.log(`  ✕ Room ${currentRoom} deleted (empty)`);
-        }
-      }
-    }
-  });
-});
-
-// ─── Health Check ──────────────────────────────────────────────────
-app.use(cors({ origin: CORS_ORIGINS }));
-app.get("/", (_req, res) => {
-  res.json({ status: "ok", rooms: rooms.size });
-});
-
-// ─── Start ─────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+//  Start Server
+// ═══════════════════════════════════════════════════════════════════
 server.listen(PORT, () => {
-  console.log(`\n🚀 Chat server running on http://localhost:${PORT}`);
-  console.log(`   CORS origins: ${CORS_ORIGINS.join(", ")}\n`);
+  log.info(`Whisper Chat Server running on http://localhost:${PORT}`);
+  log.info(`CORS origins: ${CORS_ORIGINS.join(", ")}`);
+  log.info(`Transport: websocket + polling`);
+  log.info(`Max payload: ${MAX_HTTP_BUFFER_SIZE / 1000}KB`);
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  Graceful Shutdown
+// ═══════════════════════════════════════════════════════════════════
+function gracefulShutdown(signal: string) {
+  log.info(`Received ${signal}. Shutting down gracefully…`);
+
+  // Stop accepting new connections
+  io.close(() => {
+    log.info("Socket.IO connections closed");
+  });
+
+  server.close(() => {
+    log.info("HTTP server closed");
+    roomManager.destroyAll();
+    process.exit(0);
+  });
+
+  // Force exit after 10s if something hangs
+  setTimeout(() => {
+    log.error("Forced shutdown after timeout");
+    process.exit(1);
+  }, 10_000).unref();
+}
+
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+
+// Prevent unhandled rejection crashes
+process.on("unhandledRejection", (reason) => {
+  log.error(`Unhandled rejection: ${reason}`);
+});
+
+process.on("uncaughtException", (err) => {
+  log.error(`Uncaught exception: ${err.message}`);
+  process.exit(1);
 });
