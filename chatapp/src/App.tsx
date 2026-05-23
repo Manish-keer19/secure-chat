@@ -68,7 +68,8 @@ function getAvatarColor(name: string): string {
 //  App Component
 // ═════════════════════════════════════════════════════════════════════
 export default function App() {
-  const [screen, setScreen] = useState<"join" | "chat">("join");
+  const [screen, setScreen] = useState<"waking" | "join" | "chat">("waking");
+  const [wakeStatus, setWakeStatus] = useState("Connecting to server…");
   const [username, setUsername] = useState("");
   const [roomId, setRoomId] = useState("");
   const [entries, setEntries] = useState<ChatEntry[]>([]);
@@ -87,6 +88,40 @@ export default function App() {
     setTimeout(() => {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, 50);
+  }, []);
+
+  // ── Wake up Render backend ──────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    let attempt = 0;
+
+    async function pingServer() {
+      while (!cancelled) {
+        attempt++;
+        try {
+          if (attempt === 1) setWakeStatus("Connecting to server…");
+          else if (attempt === 2) setWakeStatus("Server is waking up…");
+          else if (attempt <= 5) setWakeStatus("Still warming up, hang tight…");
+          else setWakeStatus("Almost there, just a moment…");
+
+          const res = await fetch(SOCKET_URL, { signal: AbortSignal.timeout(10000) });
+          if (res.ok) {
+            if (!cancelled) {
+              setWakeStatus("Server is ready!");
+              // Small delay so user sees the "ready" message
+              setTimeout(() => { if (!cancelled) setScreen("join"); }, 600);
+            }
+            return;
+          }
+        } catch {
+          // Server not ready yet — retry after a short delay
+        }
+        await new Promise((r) => setTimeout(r, 3000));
+      }
+    }
+
+    pingServer();
+    return () => { cancelled = true; };
   }, []);
 
   // ── Socket listeners ────────────────────────────────────────────
@@ -253,7 +288,24 @@ export default function App() {
         <div className="orb orb-3" />
       </div>
 
-      {screen === "join" ? (
+      {screen === "waking" ? (
+        /* ── WAKE-UP SCREEN ────────────────────────────────────── */
+        <div className="wake-screen">
+          <div className="wake-card">
+            <div className="wake-spinner">
+              <div className="spinner-ring" />
+              <span className="wake-icon">💬</span>
+            </div>
+            <h2 className="wake-title">Whisper</h2>
+            <p className="wake-status">{wakeStatus}</p>
+            <p className="wake-hint">
+              Free servers sleep after inactivity.
+              <br />
+              This may take up to 30–60 seconds.
+            </p>
+          </div>
+        </div>
+      ) : screen === "join" ? (
         /* ── JOIN SCREEN ──────────────────────────────────────── */
         <div className="join-screen">
           <div className="join-card">
