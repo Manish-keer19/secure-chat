@@ -17,6 +17,7 @@ interface MessageListProps {
   roomId: string;
   onCopyRoomCode: () => void;
   codeCopied: boolean;
+  onEditClick: (id: string, text: string) => void;
 }
 
 export default function MessageList({
@@ -26,6 +27,7 @@ export default function MessageList({
   roomId,
   onCopyRoomCode,
   codeCopied,
+  onEditClick,
 }: MessageListProps) {
   const areaRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -130,6 +132,8 @@ export default function MessageList({
               groupPosition={entry.groupPosition}
               showSenderName={entry.showSenderName}
               showAvatar={entry.showAvatar}
+              edited={msg.edited}
+              onEditClick={onEditClick}
             />
           );
         })}

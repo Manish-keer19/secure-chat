@@ -10,6 +10,8 @@ interface MessageInputProps {
   onChange: (value: string) => void;
   onSend: () => void;
   onTyping: () => void;
+  isEditing?: boolean;
+  onCancelEdit?: () => void;
 }
 
 export default function MessageInput({
@@ -17,6 +19,8 @@ export default function MessageInput({
   onChange,
   onSend,
   onTyping,
+  isEditing = false,
+  onCancelEdit,
 }: MessageInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -44,9 +48,15 @@ export default function MessageInput({
         if (textareaRef.current) {
           textareaRef.current.style.height = "auto";
         }
+      } else if (e.key === "Escape" && isEditing && onCancelEdit) {
+        e.preventDefault();
+        onCancelEdit();
+        if (textareaRef.current) {
+          textareaRef.current.style.height = "auto";
+        }
       }
     },
-    [onSend]
+    [onSend, isEditing, onCancelEdit]
   );
 
   const handleSendClick = useCallback(() => {
@@ -59,6 +69,14 @@ export default function MessageInput({
 
   return (
     <div className="message-input-area">
+      {isEditing && (
+        <div className="editing-banner">
+          <span className="editing-banner-text">✏️ Editing message…</span>
+          <button className="btn-cancel-edit" onClick={onCancelEdit} aria-label="Cancel editing">
+            ✕
+          </button>
+        </div>
+      )}
       <div className="message-input-wrapper">
         <textarea
           ref={textareaRef}
@@ -76,24 +94,39 @@ export default function MessageInput({
           className="btn-send"
           onClick={handleSendClick}
           disabled={!value.trim()}
-          title="Send message"
-          aria-label="Send message"
+          title={isEditing ? "Save changes" : "Send message"}
+          aria-label={isEditing ? "Save changes" : "Send message"}
           whileHover={{ scale: 1.06 }}
           whileTap={{ scale: 0.9 }}
         >
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <line x1="22" y1="2" x2="11" y2="13" />
-            <polygon points="22 2 15 22 11 13 2 9 22 2" />
-          </svg>
+          {isEditing ? (
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          ) : (
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="22" y1="2" x2="11" y2="13" />
+              <polygon points="22 2 15 22 11 13 2 9 22 2" />
+            </svg>
+          )}
         </motion.button>
       </div>
     </div>

@@ -6,7 +6,7 @@ import { useState, type FormEvent } from "react";
 import { motion } from "framer-motion";
 
 interface JoinScreenProps {
-  onJoin: (username: string, roomId: string) => void;
+  onJoin: (username: string, roomId: string, isGroup: boolean) => void;
   isConnecting: boolean;
 }
 
@@ -39,13 +39,14 @@ const featureItem = {
 export default function JoinScreen({ onJoin, isConnecting }: JoinScreenProps) {
   const [username, setUsername] = useState("");
   const [roomId, setRoomId] = useState("");
+  const [isGroup, setIsGroup] = useState(true);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     const trimmedUser = username.trim();
     const trimmedRoom = roomId.trim();
     if (!trimmedUser || !trimmedRoom) return;
-    onJoin(trimmedUser, trimmedRoom);
+    onJoin(trimmedUser, trimmedRoom, isGroup);
   }
 
   return (
@@ -100,6 +101,26 @@ export default function JoinScreen({ onJoin, isConnecting }: JoinScreenProps) {
               autoComplete="off"
               aria-required="true"
             />
+          </div>
+
+          <div className="input-group toggle-group">
+            <label>Room Type</label>
+            <div className="room-type-toggle-wrapper">
+              <button
+                type="button"
+                className={`toggle-btn ${!isGroup ? "active" : ""}`}
+                onClick={() => setIsGroup(false)}
+              >
+                👤 1-on-1 Chat
+              </button>
+              <button
+                type="button"
+                className={`toggle-btn ${isGroup ? "active" : ""}`}
+                onClick={() => setIsGroup(true)}
+              >
+                👥 Group Chat
+              </button>
+            </div>
           </div>
 
           <motion.button

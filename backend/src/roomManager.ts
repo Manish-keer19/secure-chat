@@ -45,7 +45,7 @@ class RoomManager {
 
   // ── Room Operations ─────────────────────────────────────────
   /** Get an existing room or create a new one. */
-  getOrCreate(roomId: string): Room {
+  getOrCreate(roomId: string, isGroup?: boolean): Room {
     let room = this.rooms.get(roomId);
     if (!room) {
       room = {
@@ -53,9 +53,10 @@ class RoomManager {
         users: new Map(),
         messages: [],
         lastActivity: Date.now(),
+        isGroup: isGroup !== undefined ? isGroup : true,
       };
       this.rooms.set(roomId, room);
-      log.info(`Room "${roomId}" created`);
+      log.info(`Room "${roomId}" created (isGroup: ${room.isGroup})`);
     }
     return room;
   }
@@ -83,12 +84,16 @@ class RoomManager {
     roomId: string,
     socketId: string,
     username: string,
+    isGroup?: boolean,
   ): { ok: boolean; reason?: string } {
-    const room = this.getOrCreate(roomId);
+    const room = this.getOrCreate(roomId, isGroup);
+
+    const isGroupRoom = room.isGroup !== false;
+    const capacityLimit = isGroupRoom ? MAX_USERS_PER_ROOM : 2;
 
     // Check capacity
-    if (room.users.size >= MAX_USERS_PER_ROOM) {
-      return { ok: false, reason: "Room is full" };
+    if (room.users.size >= capacityLimit) {
+      return { ok: false, reason: isGroupRoom ? "Room is full" : "This 1-on-1 room is full (max 2 participants)" };
     }
 
     // Check duplicate username in same room
@@ -146,6 +151,24 @@ class RoomManager {
       const excess = room.messages.length - MAX_MESSAGES_PER_ROOM;
       room.messages.splice(0, excess);
     }
+
+    return message;
+  }
+
+  /** Edit an existing message in a room. Returns the updated message, or null if not found or unauthorized. */
+  editMessage(roomId: string, messageId: string, sender: string, newText: string): Message | null {
+    const room = this.rooms.get(roomId);
+    if (!room) return null;
+
+    const message = room.messages.find((m) => m.id === messageId);
+    if (!message) return null;
+
+    // Verify sender
+    if (message.sender !== sender) return null;
+
+    message.text = newText;
+    message.edited = true;
+    room.lastActivity = Date.now();
 
     return message;
   }

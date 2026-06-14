@@ -10,7 +10,7 @@ const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:4000";
 
 let socket: Socket | null = null;
 
-function getSocket(): Socket {
+export function getSocket(): Socket {
   if (!socket) {
     socket = io(SOCKET_URL, { autoConnect: false });
   }
@@ -25,9 +25,11 @@ interface UseSocketReturn {
   typingUsers: Set<string>;
   isConnected: boolean;
   isConnecting: boolean;
-  joinRoom: (username: string, roomId: string) => Promise<boolean>;
+  isGroupRoom: boolean;
+  joinRoom: (username: string, roomId: string, isGroup?: boolean) => Promise<boolean>;
   leaveRoom: () => void;
   sendMessage: (text: string) => void;
+  editMessage: (id: string, text: string) => void;
   emitTyping: () => void;
 }
 
@@ -41,15 +43,17 @@ interface UseSocketReturn {
  */
 export function useSocket(
   username: string,
-  onNewMessage?: (msg: Message) => void
+  onNewMessage?: (msg: Message) => void,
 ): UseSocketReturn {
   const [entries, setEntries] = useState<ChatEntry[]>([]);
   const [users, setUsers] = useState<string[]>([]);
   const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isGroupRoom, setIsGroupRoom] = useState(true);
 
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const historyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const usernameRef = useRef(username);
   const onNewMessageRef = useRef(onNewMessage);
   const isLoadingHistoryRef = useRef(false);
@@ -84,8 +88,12 @@ export function useSocket(
       isLoadingHistoryRef.current = true;
       setEntries(messages.map((m) => ({ type: "message", data: m })));
       // Reset after a tick so subsequent new-message events trigger sounds
-      setTimeout(() => {
+      if (historyTimeoutRef.current) {
+        clearTimeout(historyTimeoutRef.current);
+      }
+      historyTimeoutRef.current = setTimeout(() => {
         isLoadingHistoryRef.current = false;
+        historyTimeoutRef.current = null;
       }, 500);
     };
 
@@ -98,6 +106,17 @@ export function useSocket(
       ) {
         onNewMessageRef.current?.(message);
       }
+    };
+
+    const onMsgEdited = (editedMsg: Message) => {
+      setEntries((prev) =>
+        prev.map((entry) => {
+          if (entry.type === "message" && entry.data.id === editedMsg.id) {
+            return { type: "message", data: editedMsg };
+          }
+          return entry;
+        })
+      );
     };
 
     const onSystemMsg = (msg: SystemMessage) => {
@@ -120,36 +139,53 @@ export function useSocket(
       });
     };
 
+    const onRoomInfo = (payload: { roomId: string; isGroup: boolean }) => {
+      setIsGroupRoom(payload.isGroup);
+    };
+
     s.on("connect", onConnect);
     s.on("disconnect", onDisconnect);
     s.on("message-history", onMessageHistory);
     s.on("new-message", onNewMsg);
+    s.on("message-edited", onMsgEdited);
     s.on("system-message", onSystemMsg);
     s.on("room-users", onRoomUsers);
     s.on("user-typing", onUserTyping);
     s.on("user-stop-typing", onUserStopTyping);
+    s.on("room-info", onRoomInfo);
 
     return () => {
       s.off("connect", onConnect);
       s.off("disconnect", onDisconnect);
       s.off("message-history", onMessageHistory);
       s.off("new-message", onNewMsg);
+      s.off("message-edited", onMsgEdited);
       s.off("system-message", onSystemMsg);
       s.off("room-users", onRoomUsers);
       s.off("user-typing", onUserTyping);
       s.off("user-stop-typing", onUserStopTyping);
+      s.off("room-info", onRoomInfo);
+
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
+      if (historyTimeoutRef.current) {
+        clearTimeout(historyTimeoutRef.current);
+        historyTimeoutRef.current = null;
+      }
     };
   }, []);
 
   // ── Actions ──────────────────────────────────────────────────
   const joinRoom = useCallback(
-    (user: string, room: string): Promise<boolean> => {
+    (user: string, room: string, isGroup?: boolean): Promise<boolean> => {
       return new Promise((resolve) => {
         setIsConnecting(true);
         const s = getSocket();
 
         const doJoin = () => {
-          s.emit("join-room", { roomId: room, username: user });
+          s.emit("join-room", { roomId: room, username: user, isGroup });
           setIsConnecting(false);
           resolve(true);
         };
@@ -166,7 +202,7 @@ export function useSocket(
         }
       });
     },
-    []
+    [],
   );
 
   const leaveRoom = useCallback(() => {
@@ -182,6 +218,11 @@ export function useSocket(
     const s = getSocket();
     s.emit("send-message", { text });
     s.emit("stop-typing");
+  }, []);
+
+  const editMessage = useCallback((id: string, text: string) => {
+    const s = getSocket();
+    s.emit("edit-message", { id, text });
   }, []);
 
   const emitTyping = useCallback(() => {
@@ -202,9 +243,11 @@ export function useSocket(
     typingUsers,
     isConnected,
     isConnecting,
+    isGroupRoom,
     joinRoom,
     leaveRoom,
     sendMessage,
+    editMessage,
     emitTyping,
   };
 }

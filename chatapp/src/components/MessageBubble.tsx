@@ -16,6 +16,8 @@ interface MessageBubbleProps {
   groupPosition: GroupPosition;
   showSenderName: boolean;
   showAvatar: boolean;
+  edited?: boolean;
+  onEditClick?: (id: string, text: string) => void;
 }
 
 const bubbleVariants = {
@@ -29,6 +31,7 @@ const bubbleVariants = {
 };
 
 function MessageBubbleInner({
+  id,
   sender,
   text,
   timestamp,
@@ -36,6 +39,8 @@ function MessageBubbleInner({
   groupPosition,
   showSenderName,
   showAvatar,
+  edited,
+  onEditClick,
 }: MessageBubbleProps) {
   return (
     <motion.div
@@ -65,11 +70,24 @@ function MessageBubbleInner({
         {showSenderName && !isOwn && (
           <div className="message-sender">{sender}</div>
         )}
-        <div className="message-bubble">
-          <div className="message-text">{text}</div>
-          <time className="message-time" dateTime={new Date(timestamp).toISOString()}>
-            {formatTime(timestamp)}
-          </time>
+        <div className="message-bubble-container">
+          {isOwn && onEditClick && (
+            <button
+              onClick={() => onEditClick(id, text)}
+              className="message-edit-btn"
+              title="Edit message"
+              aria-label="Edit message"
+            >
+              ✏️
+            </button>
+          )}
+          <div className="message-bubble">
+            <div className="message-text">{text}</div>
+            <time className="message-time" dateTime={new Date(timestamp).toISOString()}>
+              {edited && <span className="message-edited-tag">edited • </span>}
+              {formatTime(timestamp)}
+            </time>
+          </div>
         </div>
       </div>
     </motion.div>

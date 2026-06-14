@@ -7,6 +7,7 @@ export interface Message {
   sender: string;
   text: string;
   timestamp: number;
+  edited?: boolean;
 }
 
 export interface SystemMessage {

@@ -41,8 +41,18 @@ export function useSounds() {
       const audio = getSendAudio();
       const clone = audio.cloneNode() as HTMLAudioElement;
       clone.volume = audio.volume;
+
+      const cleanUp = () => {
+        clone.removeEventListener("ended", cleanUp);
+        clone.removeEventListener("error", cleanUp);
+        clone.src = "";
+        clone.load();
+      };
+      clone.addEventListener("ended", cleanUp);
+      clone.addEventListener("error", cleanUp);
+
       clone.play().catch(() => {
-        /* Browser blocked autoplay — ignore */
+        cleanUp();
       });
     } catch {
       /* Ignore audio errors */
@@ -54,8 +64,18 @@ export function useSounds() {
       const audio = getReceiveAudio();
       const clone = audio.cloneNode() as HTMLAudioElement;
       clone.volume = audio.volume;
+
+      const cleanUp = () => {
+        clone.removeEventListener("ended", cleanUp);
+        clone.removeEventListener("error", cleanUp);
+        clone.src = "";
+        clone.load();
+      };
+      clone.addEventListener("ended", cleanUp);
+      clone.addEventListener("error", cleanUp);
+
       clone.play().catch(() => {
-        /* Browser blocked autoplay — ignore */
+        cleanUp();
       });
     } catch {
       /* Ignore audio errors */

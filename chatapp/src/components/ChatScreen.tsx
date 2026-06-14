@@ -2,7 +2,7 @@
 //  ChatScreen — Main chat layout
 // ═══════════════════════════════════════════════════════════════════
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import type { ChatEntry } from "../types";
 import ChatHeader from "./ChatHeader";
@@ -13,13 +13,17 @@ import Sidebar from "./Sidebar";
 interface ChatScreenProps {
   username: string;
   roomId: string;
+  isGroupRoom?: boolean;
   entries: ChatEntry[];
   users: string[];
   typingUsers: string[];
   isConnected: boolean;
   onLeave: () => void;
   onSend: (text: string) => void;
+  onEdit?: (id: string, text: string) => void;
   onTyping: () => void;
+  onStartAudioCall?: () => void;
+  onStartVideoCall?: () => void;
 }
 
 const screenVariants = {
@@ -39,29 +43,63 @@ const screenVariants = {
 export default function ChatScreen({
   username,
   roomId,
+  isGroupRoom,
   entries,
   users,
   typingUsers,
   isConnected,
   onLeave,
   onSend,
+  onEdit,
   onTyping,
+  onStartAudioCall,
+  onStartVideoCall,
 }: ChatScreenProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [messageText, setMessageText] = useState("");
+  const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null);
   const [codeCopied, setCodeCopied] = useState(false);
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleSend = useCallback(() => {
     const text = messageText.trim();
     if (!text) return;
-    onSend(text);
+    if (editingMessage) {
+      onEdit?.(editingMessage.id, text);
+      setEditingMessage(null);
+    } else {
+      onSend(text);
+    }
     setMessageText("");
-  }, [messageText, onSend]);
+  }, [messageText, onSend, onEdit, editingMessage]);
+
+  const handleStartEdit = useCallback((id: string, text: string) => {
+    setEditingMessage({ id, text });
+    setMessageText(text);
+  }, []);
+
+  const handleCancelEdit = useCallback(() => {
+    setEditingMessage(null);
+    setMessageText("");
+  }, []);
 
   const handleLeave = useCallback(() => {
     setIsSidebarOpen(false);
     setMessageText("");
+    setEditingMessage(null);
     setCodeCopied(false);
+    if (copyTimeoutRef.current) {
+      clearTimeout(copyTimeoutRef.current);
+      copyTimeoutRef.current = null;
+    }
     onLeave();
   }, [onLeave]);
 
@@ -69,7 +107,13 @@ export default function ChatScreen({
     if (!roomId) return;
     navigator.clipboard.writeText(roomId).then(() => {
       setCodeCopied(true);
-      setTimeout(() => setCodeCopied(false), 2000);
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+      copyTimeoutRef.current = setTimeout(() => {
+        setCodeCopied(false);
+        copyTimeoutRef.current = null;
+      }, 2000);
     });
   }, [roomId]);
 
@@ -94,8 +138,11 @@ export default function ChatScreen({
           roomId={roomId}
           isConnected={isConnected}
           userCount={users.length}
+          isGroupRoom={isGroupRoom}
           onLeave={handleLeave}
           onToggleSidebar={() => setIsSidebarOpen(true)}
+          onStartAudioCall={onStartAudioCall}
+          onStartVideoCall={onStartVideoCall}
         />
 
         <MessageList
@@ -105,6 +152,7 @@ export default function ChatScreen({
           roomId={roomId}
           onCopyRoomCode={handleCopyRoomCode}
           codeCopied={codeCopied}
+          onEditClick={handleStartEdit}
         />
 
         <MessageInput
@@ -112,6 +160,8 @@ export default function ChatScreen({
           onChange={setMessageText}
           onSend={handleSend}
           onTyping={onTyping}
+          isEditing={!!editingMessage}
+          onCancelEdit={handleCancelEdit}
         />
       </main>
     </motion.div>
