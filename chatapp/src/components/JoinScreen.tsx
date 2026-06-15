@@ -39,7 +39,7 @@ const featureItem = {
 export default function JoinScreen({ onJoin, isConnecting }: JoinScreenProps) {
   const [username, setUsername] = useState("");
   const [roomId, setRoomId] = useState("");
-  const [isGroup, setIsGroup] = useState(true);
+  const [isGroup, setIsGroup] = useState(false);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();

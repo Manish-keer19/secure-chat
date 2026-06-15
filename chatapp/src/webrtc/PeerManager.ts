@@ -4,20 +4,39 @@
 //  ICE candidates, track replacements, and active calls cleanup.
 // ═══════════════════════════════════════════════════════════════════
 
-const PEER_CONFIG: RTCConfiguration = {
-  iceServers: [
+const getIceServers = (): RTCIceServer[] => {
+  const envIceServers = import.meta.env.VITE_ICE_SERVERS;
+  if (envIceServers) {
+    try {
+      return JSON.parse(envIceServers);
+    } catch (e) {
+      console.error("Failed to parse VITE_ICE_SERVERS env variable:", e);
+    }
+  }
+
+  // Default to Google STUN servers
+  return [
     {
       urls: [
         "stun:stun.l.google.com:19302",
         "stun:stun1.l.google.com:19302",
       ],
     },
-  ],
+  ];
+};
+
+const getPeerConfig = (): RTCConfiguration => {
+  return {
+    iceServers: getIceServers(),
+  };
 };
 
 export class PeerManager {
   // Map of targetSocketId -> RTCPeerConnection
   private connections = new Map<string, RTCPeerConnection>();
+  
+  // Map of targetSocketId -> Array of queued ICE candidates
+  private iceQueues = new Map<string, RTCIceCandidateInit[]>();
   
   // Track listeners to clean up
   private onIceCandidateCallback: ((targetSocketId: string, candidate: RTCIceCandidate) => void) | null = null;
@@ -39,7 +58,7 @@ export class PeerManager {
       this.cleanupPeer(targetSocketId);
     }
 
-    const pc = new RTCPeerConnection(PEER_CONFIG);
+    const pc = new RTCPeerConnection(getPeerConfig());
 
     // Add local tracks to peer connection
     localStream.getTracks().forEach((track) => {
@@ -77,6 +96,23 @@ export class PeerManager {
   }
 
   /**
+   * Process and add all queued ICE candidates for a peer
+   */
+  private async processQueuedCandidates(targetSocketId: string, pc: RTCPeerConnection): Promise<void> {
+    const queue = this.iceQueues.get(targetSocketId);
+    if (!queue || queue.length === 0) return;
+
+    this.iceQueues.delete(targetSocketId);
+    for (const candidate of queue) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (error) {
+        console.error(`Error adding queued ICE candidate for ${targetSocketId}:`, error);
+      }
+    }
+  }
+
+  /**
    * Generate an SDP offer for a target peer
    */
   async createOffer(targetSocketId: string): Promise<RTCSessionDescriptionInit> {
@@ -98,6 +134,10 @@ export class PeerManager {
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
+
+    // Process queued ICE candidates
+    await this.processQueuedCandidates(targetSocketId, pc);
+
     return answer;
   }
 
@@ -113,6 +153,8 @@ export class PeerManager {
 
     if (pc.signalingState !== "stable") {
       await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      // Process queued ICE candidates
+      await this.processQueuedCandidates(targetSocketId, pc);
     }
   }
 
@@ -123,6 +165,15 @@ export class PeerManager {
     const pc = this.connections.get(targetSocketId);
     if (!pc) {
       console.warn(`Peer connection for ${targetSocketId} not found to add ICE candidate.`);
+      return;
+    }
+
+    // Queue the candidate if the remote description has not been set yet
+    if (!pc.remoteDescription) {
+      if (!this.iceQueues.has(targetSocketId)) {
+        this.iceQueues.set(targetSocketId, []);
+      }
+      this.iceQueues.get(targetSocketId)!.push(candidate);
       return;
     }
 
@@ -190,6 +241,7 @@ export class PeerManager {
       pc.close();
       this.connections.delete(targetSocketId);
     }
+    this.iceQueues.delete(targetSocketId);
   }
 
   /**
@@ -200,5 +252,6 @@ export class PeerManager {
       pc.close();
     });
     this.connections.clear();
+    this.iceQueues.clear();
   }
 }
