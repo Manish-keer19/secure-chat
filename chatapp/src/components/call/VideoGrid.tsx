@@ -3,6 +3,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import ParticipantTile from "./ParticipantTile";
+import type { ReactNode } from "react";
 
 interface GridParticipant {
   socketId: string;
@@ -16,11 +17,12 @@ interface GridParticipant {
 interface VideoGridProps {
   participants: GridParticipant[];
   callType: "audio" | "video";
+  renderFullscreenControls?: () => ReactNode;
 }
 
-export default function VideoGrid({ participants, callType }: VideoGridProps) {
+export default function VideoGrid({ participants, callType, renderFullscreenControls }: VideoGridProps) {
   const count = participants.length;
-  
+
   // Decide grid class based on participant count
   let gridClass = "grid-1";
   if (count === 2) {
@@ -55,6 +57,7 @@ export default function VideoGrid({ participants, callType }: VideoGridProps) {
             videoEnabled={p.videoEnabled}
             isLocal={p.isLocal}
             callType={callType}
+            renderFullscreenControls={renderFullscreenControls}
           />
         ))}
       </div>

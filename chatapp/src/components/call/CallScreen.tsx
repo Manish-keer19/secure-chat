@@ -51,7 +51,22 @@ export default function CallScreen() {
       isLocal: false,
     }));
 
-  const allGridParticipants = [localParticipant, ...remoteParticipants];
+  // Place remote participants first and local participant last,
+  // so that the local video is positioned on the right side of the grid
+  const allGridParticipants = [...remoteParticipants, localParticipant];
+  const renderCallControls = () => (
+    <CallControls
+      audioEnabled={audioEnabled}
+      videoEnabled={videoEnabled}
+      isSharingScreen={isSharingScreen}
+      callType={callState.callType}
+      onToggleAudio={toggleAudio}
+      onToggleVideo={toggleVideo}
+      onSwitchCamera={switchCamera}
+      onToggleScreenShare={toggleScreenShare}
+      onLeave={leaveCall}
+    />
+  );
 
   return (
     <motion.div
@@ -74,20 +89,11 @@ export default function CallScreen() {
         <VideoGrid
           participants={allGridParticipants}
           callType={callState.callType}
+          renderFullscreenControls={renderCallControls}
         />
 
         {/* Controls Tray */}
-        <CallControls
-          audioEnabled={audioEnabled}
-          videoEnabled={videoEnabled}
-          isSharingScreen={isSharingScreen}
-          callType={callState.callType}
-          onToggleAudio={toggleAudio}
-          onToggleVideo={toggleVideo}
-          onSwitchCamera={switchCamera}
-          onToggleScreenShare={toggleScreenShare}
-          onLeave={leaveCall}
-        />
+        {renderCallControls()}
       </div>
     </motion.div>
   );

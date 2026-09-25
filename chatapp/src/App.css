@@ -1423,12 +1423,11 @@
   height: 100%;
   object-fit: cover;
   border-radius: calc(var(--radius-lg) - 1px);
-  transform: scaleX(-1); /* mirror self stream */
 }
 
-/* Do not mirror remote peer streams */
-.participant-tile:not(.local-tile) .participant-video {
-  transform: none;
+/* Mirror only the LOCAL user's video (selfie/mirror view) */
+.local-tile .participant-video {
+  transform: scaleX(-1);
 }
 
 /* Fullscreen Styles for Participant Tile */
@@ -1469,15 +1468,36 @@
 }
 
 .participant-tile:fullscreen .participant-overlay {
-  bottom: 24px;
+  bottom: 96px;
   padding: 16px 24px;
   background: linear-gradient(to top, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0) 100%);
 }
 
 .participant-tile:-webkit-full-screen .participant-overlay {
-  bottom: 24px;
+  bottom: 96px;
   padding: 16px 24px;
   background: linear-gradient(to top, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0) 100%);
+}
+
+.participant-fullscreen-controls {
+  display: none;
+}
+
+.participant-tile:fullscreen .participant-fullscreen-controls,
+.participant-tile:-webkit-full-screen .participant-fullscreen-controls {
+  position: absolute;
+  left: 50%;
+  bottom: max(22px, env(safe-area-inset-bottom));
+  z-index: 4;
+  display: flex;
+  transform: translateX(-50%);
+}
+
+.participant-tile:fullscreen .participant-fullscreen-controls .call-controls-tray,
+.participant-tile:-webkit-full-screen .participant-fullscreen-controls .call-controls-tray {
+  background: rgba(8, 8, 12, 0.72);
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
 }
 
 .btn-fullscreen {

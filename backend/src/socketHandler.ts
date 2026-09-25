@@ -76,7 +76,11 @@ function isRateLimited(session: SocketSession): boolean {
 }
 
 // ── Helper: Leave Room ────────────────────────────────────────────
-function leaveRoom(io: TypedServer, socket: TypedSocket, session: SocketSession): void {
+function leaveRoom(
+  io: TypedServer,
+  socket: TypedSocket,
+  session: SocketSession,
+): void {
   if (!session.roomId || !session.username) return;
 
   const { roomId, username } = session;
@@ -116,7 +120,9 @@ function leaveRoom(io: TypedServer, socket: TypedSocket, session: SocketSession)
     if (currentCall && !currentCall.hasBeenAnswered) {
       const room = roomManager.get(roomId);
       const usersInRoom = room ? Array.from(room.users.keys()) : [];
-      const potentialAnswerers = usersInRoom.filter(id => id !== currentCall.participants[0].socketId);
+      const potentialAnswerers = usersInRoom.filter(
+        (id) => id !== currentCall.participants[0].socketId,
+      );
       if (potentialAnswerers.length === 0) {
         // No one else is in the room to answer the call! Force end it.
         callManager.leaveCall(roomId, currentCall.participants[0].socketId);
@@ -168,7 +174,12 @@ export function registerSocketHandlers(io: TypedServer): void {
       leaveRoom(io, socket, session);
 
       // Try to join new room
-      const result = roomManager.addUser(roomId, socket.id, username, payload.isGroup);
+      const result = roomManager.addUser(
+        roomId,
+        socket.id,
+        username,
+        payload.isGroup,
+      );
       if (!result.ok) {
         socket.emit("system-message", {
           id: generateId(),
@@ -227,7 +238,11 @@ export function registerSocketHandlers(io: TypedServer): void {
       session.lastMessageAt = Date.now();
       session.messageCount++;
 
-      const message = roomManager.addMessage(session.roomId, session.username, text);
+      const message = roomManager.addMessage(
+        session.roomId,
+        session.username,
+        text,
+      );
       if (message) {
         io.to(session.roomId).emit("new-message", message);
       }
@@ -236,13 +251,21 @@ export function registerSocketHandlers(io: TypedServer): void {
     // ── edit-message ──────────────────────────────────────────
     socket.on("edit-message", (payload: { id: string; text: string }) => {
       if (!session.roomId || !session.username) return;
-      if (!payload || typeof payload !== "object" || !payload.id || typeof payload.text !== "string") return;
+      if (
+        !payload ||
+        typeof payload !== "object" ||
+        !payload.id ||
+        typeof payload.text !== "string"
+      )
+        return;
 
       const text = validateMessage(payload.text);
       if (!text) return;
 
       if (isRateLimited(session)) {
-        log.warn(`Rate limited edit: ${session.username} in room ${session.roomId}`);
+        log.warn(
+          `Rate limited edit: ${session.username} in room ${session.roomId}`,
+        );
         return;
       }
 
@@ -253,7 +276,7 @@ export function registerSocketHandlers(io: TypedServer): void {
         session.roomId,
         payload.id,
         session.username,
-        text
+        text,
       );
 
       if (message) {
@@ -288,7 +311,12 @@ export function registerSocketHandlers(io: TypedServer): void {
       }
 
       const callType = payload?.callType === "audio" ? "audio" : "video";
-      const call = callManager.startCall(session.roomId, socket.id, session.username, callType);
+      const call = callManager.startCall(
+        session.roomId,
+        socket.id,
+        session.username,
+        callType,
+      );
       if (call) {
         io.to(session.roomId).emit("call-state", call);
 
@@ -317,7 +345,11 @@ export function registerSocketHandlers(io: TypedServer): void {
         return;
       }
 
-      const { call, error } = callManager.joinCall(session.roomId, socket.id, session.username);
+      const { call, error } = callManager.joinCall(
+        session.roomId,
+        socket.id,
+        session.username,
+      );
       if (error || !call) {
         socket.emit("call-error", error ?? "Failed to join call");
         return;
@@ -330,7 +362,9 @@ export function registerSocketHandlers(io: TypedServer): void {
         callTimeouts.delete(session.roomId);
       }
 
-      const joinedParticipant = call.participants.find((p) => p.socketId === socket.id);
+      const joinedParticipant = call.participants.find(
+        (p) => p.socketId === socket.id,
+      );
       if (joinedParticipant) {
         socket.to(session.roomId).emit("participant-joined", joinedParticipant);
       }
@@ -344,7 +378,9 @@ export function registerSocketHandlers(io: TypedServer): void {
 
       const currentCall = callManager.getCall(session.roomId);
       if (currentCall) {
-        const isParticipant = currentCall.participants.some(p => p.socketId === socket.id);
+        const isParticipant = currentCall.participants.some(
+          (p) => p.socketId === socket.id,
+        );
         if (!isParticipant && currentCall.participants.length === 1) {
           // A recipient declined the call before joining. Force end the call.
           const initiatorSocketId = currentCall.participants[0].socketId;
@@ -356,20 +392,29 @@ export function registerSocketHandlers(io: TypedServer): void {
             callTimeouts.delete(session.roomId);
           }
 
-          io.to(session.roomId).emit("call-ended", { reason: "declined", username: session.username || "User" });
+          io.to(session.roomId).emit("call-ended", {
+            reason: "declined",
+            username: session.username || "User",
+          });
           io.to(session.roomId).emit("call-state", null);
           return;
         }
       }
 
-      const { callDeleted, call } = callManager.leaveCall(session.roomId, socket.id);
+      const { callDeleted, call } = callManager.leaveCall(
+        session.roomId,
+        socket.id,
+      );
       if (callDeleted) {
         const timeout = callTimeouts.get(session.roomId);
         if (timeout) {
           clearTimeout(timeout);
           callTimeouts.delete(session.roomId);
         }
-        io.to(session.roomId).emit("call-ended", { reason: "left", username: session.username || "User" });
+        io.to(session.roomId).emit("call-ended", {
+          reason: "left",
+          username: session.username || "User",
+        });
         io.to(session.roomId).emit("call-state", null);
       } else {
         socket.to(session.roomId).emit("participant-left", socket.id);
@@ -436,7 +481,12 @@ export function registerSocketHandlers(io: TypedServer): void {
       if (!session.roomId) return;
       const { audio, video } = payload;
 
-      const call = callManager.toggleMedia(session.roomId, socket.id, audio, video);
+      const call = callManager.toggleMedia(
+        session.roomId,
+        socket.id,
+        audio,
+        video,
+      );
       if (call) {
         socket.to(session.roomId).emit("participant-media-toggled", {
           socketId: socket.id,

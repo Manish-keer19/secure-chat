@@ -93,7 +93,12 @@ class RoomManager {
 
     // Check capacity
     if (room.users.size >= capacityLimit) {
-      return { ok: false, reason: isGroupRoom ? "Room is full" : "This 1-on-1 room is full (max 2 participants)" };
+      return {
+        ok: false,
+        reason: isGroupRoom
+          ? "Room is full"
+          : "This 1-on-1 room is full (max 2 participants)",
+      };
     }
 
     // Check duplicate username in same room
@@ -156,7 +161,12 @@ class RoomManager {
   }
 
   /** Edit an existing message in a room. Returns the updated message, or null if not found or unauthorized. */
-  editMessage(roomId: string, messageId: string, sender: string, newText: string): Message | null {
+  editMessage(
+    roomId: string,
+    messageId: string,
+    sender: string,
+    newText: string,
+  ): Message | null {
     const room = this.rooms.get(roomId);
     if (!room) return null;
 

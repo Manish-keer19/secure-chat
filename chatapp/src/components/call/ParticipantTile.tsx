@@ -3,6 +3,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { getInitial, getAvatarColor } from "../../utils/helpers";
 
 interface ParticipantTileProps {
@@ -12,6 +13,7 @@ interface ParticipantTileProps {
   videoEnabled: boolean;
   isLocal: boolean;
   callType: "audio" | "video";
+  renderFullscreenControls?: () => ReactNode;
 }
 
 export default function ParticipantTile({
@@ -21,6 +23,7 @@ export default function ParticipantTile({
   videoEnabled,
   isLocal,
   callType,
+  renderFullscreenControls,
 }: ParticipantTileProps) {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -255,6 +258,15 @@ export default function ParticipantTile({
           )}
         </div>
       </div>
+
+      {isFullscreen && renderFullscreenControls && (
+        <div
+          className="participant-fullscreen-controls"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {renderFullscreenControls()}
+        </div>
+      )}
     </div>
   );
 }
